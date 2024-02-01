@@ -54,6 +54,8 @@ int Cnttmp;
 float velocity;
 
 int tick_2 = 0;
+
+double pwm = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -67,6 +69,31 @@ void send_string(char *str);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void TIM2_IRQHandler (void){
+	if(TIM2->SR & TIM_SR_UIF){
+		TIM2->SR &= ~TIM_SR_UIF;   // Clear interrupt flag for Timer 2
+		
+		TIM3->CCR1 = (pwm/100)*400;
+		tick_2++;
+		
+		if (tick_2 > 50) {
+			tick_2 = 0;
+			Cnttmp = CountValue;
+			CountValue = 0;
+			velocity = Cnttmp * 60.0 / (4 * 11 * 44 * 0.05);
+		}	
+	}
+}
+
+void TIM4_IRQHandler(void) {
+	if(TIM4->SR & TIM_SR_UIF){
+		TIM4->SR &= ~TIM_SR_UIF;   // Clear interrupt flag for Timer 4
+		// Handle Timer 4 logic here (e.g., update and send velocity)
+		sprintf(str, "%f\n", velocity);
+		send_string(str);	
+	}
+}
+
 
 /* USER CODE END 0 */
 
@@ -104,36 +131,7 @@ int main(void)
   GPIOA->CRH |= 0x00000000; //clear port A CRHigh
   GPIOB->CRL |= 0x00000000; //clear port B CRLow
   GPIOB->CRH |= 0x00000000; //clear port B CRHigh
-  
-// Init TIM2 (1ms) mode internal clock // Caculator PID
-  RCC->APB1ENR |= (1 << 0); // clock for TIM2
-  TIM2->PSC = (8*1) - 1;
-  TIM2->ARR = 1000 - 1;
-  TIM2->EGR = (1 << 0);
-  TIM2->CR1 |= (1 << 0);
-  TIM2->DIER |= (1 << 0);// TIM2 interupt enable
-  NVIC->ISER[0] |= (1 << 28);// enable TIM2 global interrupt(vector)
-
-// Iinit TIM3 PWM mode 20kHz
-  RCC->APB2ENR |= (1 << 2); // clock to GPIOA
-  GPIOA->CRL |= (0x09 << (4*6)); // PA6 output AF 
-  RCC->APB1ENR |= (1 << 1); //clock to timer 3
-  TIM3->PSC = 0; // PSC
-  TIM3->ARR = 400; // PWM = 20kHz
-  TIM3->CCR1 = 400; // duty cycle pwm
-  TIM3->CCMR1 |= (0x06 << 4); //choose PWM mode 1 at CH1
-  TIM3->CCER |= (1 << 0); // enable channel 1 -- TIM 3
-  TIM3->CR1 |=(1 << 0); // enable counter
 	
-// Init TIM4 (500ms) mode internal clock // tranmister USART
-  RCC->APB1ENR |= (1 << 2); // clock for TIM4
-  TIM4->PSC = (800) - 1;
-  TIM4->ARR = 10000 - 1;
-  TIM4->EGR = (1 << 0);
-  TIM4->CR1 |= (1 << 0);
-  TIM4->DIER |= (1 << 0);// TIM4 interupt enable
-  NVIC->ISER[0] |= (1 << 30);// enable TIM4 global interrupt(vector)
-
 // Init USART1
 	RCC->APB2ENR |= (1 << 2) | (1 << 14); // clock for GPIOA USART1
 	GPIOA->CRH |= 0x00000000;
@@ -143,6 +141,37 @@ int main(void)
 	USART1->CR1 |= (1 << 2)|(1 << 3)|(1 << 13);
 	USART1->CR1 |= (1 << 5);
 	NVIC->ISER[1] |= (1 << 5);// toa do tuong doi 37-32
+  
+// TIMER
+	// Enable clock for TIM2 and TIM4
+	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN | RCC_APB1ENR_TIM4EN;
+
+	// TIM2 Configuration (1ms)
+	TIM2->PSC = (8 - 1);  // Assuming 8 MHz / (PSC + 1) = 1 MHz
+	TIM2->ARR = (1000 - 1);   // 10 MHz / (ARR + 1) = 1 ms
+	TIM2->DIER |= TIM_DIER_UIE; // Enable TIM2 interrupt
+	NVIC_EnableIRQ(TIM2_IRQn);
+
+	// TIM4 Configuration (50ms)
+	TIM4->PSC = (80*5 - 1);  // Assuming 8 MHz / (PSC + 1) = 10 kHz
+	TIM4->ARR = (10000 - 1); // 10 kHz / (ARR + 1) = 50 ms
+	TIM4->DIER |= TIM_DIER_UIE; // Enable TIM4 interrupt
+	NVIC_EnableIRQ(TIM4_IRQn);
+
+	// Enable timers
+	TIM2->CR1 |= TIM_CR1_CEN;
+	TIM4->CR1 |= TIM_CR1_CEN;
+
+// Iinit TIM3 PWM mode 20kHz
+  RCC->APB2ENR |= (1 << 2); // clock to GPIOA
+  GPIOA->CRL |= (0x09 << (4*6)); // PA6 output AF 
+  RCC->APB1ENR |= (1 << 1); //clock to timer 3
+  TIM3->PSC = 0; // PSC
+  TIM3->ARR = 400; // PWM = 20kHz
+  TIM3->CCR1 = 0; // duty cycle pwm
+  TIM3->CCMR1 |= (0x06 << 4); //choose PWM mode 1 at CH1
+  TIM3->CCER |= (1 << 0); // enable channel 1 -- TIM 3
+  TIM3->CR1 |=(1 << 0); // enable counter
 	
 //=====Set up EXTI3--PA3 to read encoder======
 	GPIOA->CRL |= (8 << (4*3)); // input pull_up/pull_down at PA3
@@ -182,25 +211,6 @@ int main(void)
   /* USER CODE END 3 */
 }
 
-void TIM2_IRQHandler (void){
-	TIM2->SR &= ~(1 << 0);   // Clear interrupt flag for Timer 2
-	tick_2++;
-	
-	if (tick_2 > 50) {
-		tick_2 = 0;
-		Cnttmp = CountValue;
-		CountValue = 0;
-		velocity = Cnttmp * 60.0 / (4 * 11 * 44 * 0.05);
-	}	
-}
-
-void TIM4_IRQHandler(void) {
-	TIM4->SR &= ~(1 << 0);   // Clear interrupt flag for Timer 4
-	// Handle Timer 4 logic here (e.g., update and send velocity)
-	sprintf(str, "Velocity: %f\n", velocity);
-	send_string(str);
-}
-
 void EXTI3_IRQHandler(void){
   EXTI->PR |= (1 << 3);//clear interupt flag EXTI3
   CountValue++;    
@@ -222,7 +232,8 @@ void USART1_IRQHandler(void){
 		for (int i = 0; i < count_data; i++){
 			send[i] = RX_data[i];
 		}
-		send[count_data] = '\n';
+		pwm = atof(send);
+		
 		count_data = 0;
 	}
 }
