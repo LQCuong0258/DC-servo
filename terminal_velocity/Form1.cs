@@ -46,7 +46,7 @@ namespace terminal_velocity
 
             // Khởi tạo và cấu hình Timer
             timer = new Timer();
-            timer.Interval = 1; // 1ms
+            timer.Interval = 100; // 1ms
             timer.Tick += Timer_Tick;
         }
         /// <summary>
@@ -63,6 +63,10 @@ namespace terminal_velocity
             // 2 textBox
             textBox_setpoint.Text = data_sp;
             textBox_real_value.Text = data_real;
+
+            // Bật lưới đồ thị
+            myPane.XAxis.MajorGrid.IsVisible = true;
+            myPane.YAxis.MajorGrid.IsVisible = true;
 
             // Đặt tên cho trục x và trục y
             myPane.XAxis.Title.Text = "Thời gian (s)";
@@ -105,7 +109,7 @@ namespace terminal_velocity
             {
                 // Received data by USART, Value received is real_velocity
                 data_real = serial_Port.ReadLine();
-            }
+            }   
             catch (FormatException)
             {
                 // Xử lý nếu không thể chuyển đổi thành double
