@@ -67,7 +67,7 @@
             this.zedGraph.ScrollMinX = 0D;
             this.zedGraph.ScrollMinY = 0D;
             this.zedGraph.ScrollMinY2 = 0D;
-            this.zedGraph.Size = new System.Drawing.Size(884, 378);
+            this.zedGraph.Size = new System.Drawing.Size(884, 379);
             this.zedGraph.TabIndex = 1;
             this.zedGraph.UseExtendedPrintDialog = true;
             // 
@@ -265,7 +265,7 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1169, 409);
+            this.ClientSize = new System.Drawing.Size(1169, 412);
             this.Controls.Add(this.groupBox3);
             this.Controls.Add(this.groupBox2);
             this.Controls.Add(this.groupBox1);

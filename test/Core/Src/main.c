@@ -56,6 +56,15 @@ float velocity;
 int tick_2 = 0;
 
 double pwm = 0;
+// Value error
+double setpoint, real;
+double e, e_pre, e_reset;
+
+double Up, Up_pre, Ui, Ui_pre, Ud, Ud_pre, Ud_f, Ud_f_pre;
+// Paramenter PID
+double Kp = 2.046628453, Ki = 30.73015695, Kd = 0;
+double Kb = 15.01501502;
+//
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -64,33 +73,72 @@ static void MX_GPIO_Init(void);
 /* USER CODE BEGIN PFP */
 void send_char(char data);
 void send_string(char *str);
-
+void dir(double value);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void TIM2_IRQHandler (void){
+float Ts = 0.02;
+float alpha = 0.6;
+void TIM2_IRQHandler (void){ // 1ms
 	if(TIM2->SR & TIM_SR_UIF){
 		TIM2->SR &= ~TIM_SR_UIF;   // Clear interrupt flag for Timer 2
-		
-		TIM3->CCR1 = (pwm/100)*400;
 		tick_2++;
 		
-		if (tick_2 > 50) {
+		double pid;
+		int High_lim = 400, Low_lim = 0;
+		
+		
+		if (tick_2 == 20) {
 			tick_2 = 0;
+			// Caculator Velocity
 			Cnttmp = CountValue;
 			CountValue = 0;
-			velocity = Cnttmp * 60.0 / (4 * 11 * 44 * 0.05);
+			velocity = Cnttmp * 60.0 / (4 * 11 * 44 * Ts);
+			real = velocity;
+			setpoint = atof(send);
+			
+			// PID
+			e = setpoint - real; // error
+			
+			Up = Kp*e; //
+			
+			Ui = Ui_pre + Ki*Ts*e + Kb*Ts*e_reset; // antiwindup
+			
+			Ud = Kd*(e - e_pre)/Ts;//
+			Ud_f = (1 - alpha)*Ud_f_pre + alpha*Ud; // low pass fillter
+
+			// Luu lai cac gia tri
+			e_pre = e;
+			Ui_pre = Ui;
+			Ud_f_pre = Ud_f;
+			
+			pid = Up + Ui + Ud_f;
+
+			// Saturated
+			if (pid > High_lim) pwm = High_lim;
+			else if(pid < Low_lim) pwm = Low_lim;
+			else pwm = pid;
+			
+			dir(pid);
+			e_reset = pwm - pid;
+			// Set value PWM
+			TIM3->CCR1 = (pwm/100)*400;
 		}	
 	}
 }
 
-void TIM4_IRQHandler(void) {
+int tick_4;
+void TIM4_IRQHandler(void) { // 1ms
 	if(TIM4->SR & TIM_SR_UIF){
 		TIM4->SR &= ~TIM_SR_UIF;   // Clear interrupt flag for Timer 4
-		// Handle Timer 4 logic here (e.g., update and send velocity)
-		sprintf(str, "%f\n", velocity);
-		send_string(str);	
+		tick_4++;
+		if (tick_4 == 50) {
+			tick_4 = 0;
+			// Handle Timer 4 logic here (e.g., update and send velocity)
+			sprintf(str, "%f\n", velocity);
+			send_string(str);		
+		}			
 	}
 }
 
@@ -149,12 +197,14 @@ int main(void)
 	// TIM2 Configuration (1ms)
 	TIM2->PSC = (8 - 1);  // Assuming 8 MHz / (PSC + 1) = 1 MHz
 	TIM2->ARR = (1000 - 1);   // 10 MHz / (ARR + 1) = 1 ms
+	TIM2->EGR = TIM_EGR_UG;
 	TIM2->DIER |= TIM_DIER_UIE; // Enable TIM2 interrupt
 	NVIC_EnableIRQ(TIM2_IRQn);
 
-	// TIM4 Configuration (50ms)
-	TIM4->PSC = (80*5 - 1);  // Assuming 8 MHz / (PSC + 1) = 10 kHz
-	TIM4->ARR = (10000 - 1); // 10 kHz / (ARR + 1) = 50 ms
+	// TIM4 Configuration (10ms)
+	TIM4->PSC = (80 - 1);  // Assuming 8 MHz / (PSC + 1) = 10 kHz
+	TIM4->ARR = (100 - 1); // 10 kHz / (ARR + 1) = 10 ms
+	TIM4->EGR = TIM_EGR_UG;
 	TIM4->DIER |= TIM_DIER_UIE; // Enable TIM4 interrupt
 	NVIC_EnableIRQ(TIM4_IRQn);
 
@@ -210,6 +260,20 @@ int main(void)
   }
   /* USER CODE END 3 */
 }
+void dir(double value){
+	if (value > 0) {
+		GPIOB->ODR |= (1 << 0); // logic to pin IN1, IN2
+		GPIOB->ODR &= ~(1 << 1);		
+	}
+	else if (value < 0) {
+		GPIOB->ODR &= ~(1 << 0); // logic to pin IN1, IN2
+		GPIOB->ODR |= (1 << 1);
+	}
+	else {
+		GPIOB->ODR &= ~(1 << 0); // logic to pin IN1, IN2
+		GPIOB->ODR &= ~(1 << 1);	
+	}
+}
 
 void EXTI3_IRQHandler(void){
   EXTI->PR |= (1 << 3);//clear interupt flag EXTI3
@@ -232,7 +296,6 @@ void USART1_IRQHandler(void){
 		for (int i = 0; i < count_data; i++){
 			send[i] = RX_data[i];
 		}
-		pwm = atof(send);
 		
 		count_data = 0;
 	}
