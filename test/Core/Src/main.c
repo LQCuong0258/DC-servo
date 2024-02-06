@@ -51,17 +51,17 @@ char send[50];
 int CountValue;
 int Cnttmp;
 
-float velocity;
+double velocity, velocity_pre;
+double v_filt, v_filt_pre;
 
 int tick_2 = 0;
 
 double pwm = 0;
 // Value error
 double setpoint, real;
-double e, e_pre, e_reset;
+int High_lim, Low_lim;
 
-double Up, Up_pre, Ui, Ui_pre, Ud, Ud_pre, Ud_f, Ud_f_pre;
-
+double Kp, Ki, Kd, Kb;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,13 +71,60 @@ static void MX_GPIO_Init(void);
 void send_char(char data);
 void send_string(char *str);
 void dir(double value);
-void PID(double Kp, double Ki, double Kd, double Kb);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 float Ts = 0.05;
 float alpha = 0.6;
+
+void PID(double setpoint, double real){
+	double pid;
+	
+	High_lim = 400, Low_lim = 0;
+	static double e_pre = 0;
+	static double Ui_pre = 0;
+	static double e_reset = 0;
+	static double Ud_f_pre = 0;
+	
+	double e;
+	double Up, Ui, Ud, Ud_f;
+	
+	Kp = 1.222113111;
+	Ki = 2.961660972;
+	Kd = 0;
+	
+	Kb = 2.423393502;
+	
+	e = setpoint - real; // error
+	
+	Up = Kp*e; //
+	
+	Ui = Ui_pre + Ki*Ts*e + Kb*Ts*e_reset; // antiwindup
+	
+	Ud = Kd*(e - e_pre)/Ts;//
+	Ud_f = (1 - alpha)*Ud_f_pre + alpha*Ud; // low pass fillter
+
+	// Luu lai cac gia tri
+	e_pre = e;
+	Ui_pre = Ui;
+	Ud_f_pre = Ud_f;
+	
+	pid = Up + Ui + Ud_f;
+
+	// Saturated
+//	pid = abs((int)pid);
+	if (pid > High_lim) pwm = High_lim;
+	else if(pid < Low_lim) pwm = Low_lim;
+	else pwm = pid;
+	e_reset = pwm - pid;
+	
+	
+	dir(pid);
+	// Set value PWM
+	TIM3->CCR1 = pwm;
+}
+
 void TIM2_IRQHandler (void){ // 1ms
 	if(TIM2->SR & TIM_SR_UIF){
 		TIM2->SR &= ~TIM_SR_UIF;   // Clear interrupt flag for Timer 2
@@ -88,13 +135,17 @@ void TIM2_IRQHandler (void){ // 1ms
 			// Caculator Velocity
 			Cnttmp = CountValue;
 			CountValue = 0;
+//			velocity = Cnttmp * 60.0 / (4 * 11 * Ts);
 			velocity = Cnttmp * 60.0 / (4 * 11 * 42 * Ts);
+//			v_filt = 0.854*v_filt + 0.0728*velocity + 0.0728*velocity_pre;
+//			velocity_pre = velocity;
 //			velocity = Cnttmp*2*pi / (4 * 11 * 42 * Ts);
 			real = velocity;
+//			real = v_filt;
 			setpoint = atof(send);
 			
 			// PID
-			PID(0.08841455955, 1.555555587, 0, 17.59388493);
+			PID(setpoint, real);
 		}	
 	}
 }
@@ -103,13 +154,30 @@ int tick_4;
 void TIM4_IRQHandler(void) { // 1ms
 	if(TIM4->SR & TIM_SR_UIF){
 		TIM4->SR &= ~TIM_SR_UIF;   // Clear interrupt flag for Timer 4
-//		tick_4++;
-//		if (tick_4 == 50) {
-//			tick_4 = 0;
+		tick_4++;
+		
+		if (tick_4 == 500) {
+			tick_4 = 0;
 			// Handle Timer 4 logic here (e.g., update and send velocity)
 			sprintf(str, "%f\n", velocity);
+//			sprintf(str, "%f\n", v_filt);
 			send_string(str);		
-//		}			
+		}			
+	}
+}
+
+void USART1_IRQHandler(void){
+	if((USART1->DR != '\n')) RX_data[count_data++] = USART1->DR;
+	else{
+		char size = sizeof(send) / sizeof(send[0]);
+		for (int i = 0; i < size; i++) {
+        send[i] = 0;  // clear array send
+    }
+		
+		for (int i = 0; i < count_data; i++){
+			send[i] = RX_data[i];
+		}
+		count_data = 0;
 	}
 }
 
@@ -189,7 +257,7 @@ int main(void)
   RCC->APB1ENR |= (1 << 1); //clock to timer 3
   TIM3->PSC = 0; // PSC
   TIM3->ARR = 400; // PWM = 20kHz
-  TIM3->CCR1 = pwm; // duty cycle pwm
+//  TIM3->CCR1 = 0; // duty cycle pwm
   TIM3->CCMR1 |= (0x06 << 4); //choose PWM mode 1 at CH1
   TIM3->CCER |= (1 << 0); // enable channel 1 -- TIM 3
   TIM3->CR1 |=(1 << 0); // enable counter
@@ -218,6 +286,8 @@ int main(void)
   GPIOB->ODR &= ~(1 << 1);
 	
   /* USER CODE END 2 */
+//	HAL_Delay(5000);
+//	TIM3->CCR1 = 400; // duty cycle pwm
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -230,36 +300,7 @@ int main(void)
   /* USER CODE END 3 */
 }
 
-void PID(double Kp, double Ki, double Kd, double Kb){
-	double pid;
-	int High_lim = 400, Low_lim = 0;
-	
-	e = setpoint - real; // error
-	
-	Up = Kp*e; //
-	
-	Ui = Ui_pre + Ki*Ts*(e + e_pre)/2;//Ki*Ts*e + Kb*Ts*e_reset; // antiwindup
-	
-	Ud = Kd*(e - e_pre)/Ts;//
-	Ud_f = (1 - alpha)*Ud_f_pre + alpha*Ud; // low pass fillter
 
-	// Luu lai cac gia tri
-	e_pre = e;
-	Ui_pre = Ui;
-	Ud_f_pre = Ud_f;
-	
-	pid = Up + Ui + Ud_f;
-
-	// Saturated
-	if (pid > High_lim) pwm = High_lim;
-	else if(pid < Low_lim) pwm = Low_lim;
-	else pwm = pid;
-	
-	dir(pid);
-	e_reset = pwm - pid;
-	// Set value PWM
-	TIM3->CCR1 = pwm;
-}
 void dir(double value){
 	if (value > 0) {
 		GPIOB->ODR |= (1 << 0); // logic to pin IN1, IN2
@@ -283,22 +324,6 @@ void EXTI3_IRQHandler(void){
 void EXTI4_IRQHandler(void){
   EXTI->PR |= (1 << 4);//clear interupt flag EXTI3
   CountValue++;    
-}
-
-void USART1_IRQHandler(void){
-	if((USART1->DR != '\n')) RX_data[count_data++] = USART1->DR;
-	else{
-		char size = sizeof(send) / sizeof(send[0]);
-		for (int i = 0; i < size; i++) {
-        send[i] = 0;  // clear array send
-    }
-		
-		for (int i = 0; i < count_data; i++){
-			send[i] = RX_data[i];
-		}
-//		TIM3->CCR1 = atoi(send);
-		count_data = 0;
-	}
 }
 
 void send_char(char data){

@@ -43,11 +43,6 @@ namespace terminal_velocity
             portname.Items.AddRange(myport);
             baudrate.Items.AddRange(baud);
             serial_Port.DataReceived += serial_Port_DataReceived;
-
-            // Khởi tạo và cấu hình Timer
-            timer = new Timer();
-            timer.Interval = 100; // 1ms
-            timer.Tick += Timer_Tick;
         }
         /// <summary>
         /// function Init Graph
@@ -73,29 +68,12 @@ namespace terminal_velocity
             myPane.YAxis.Title.Text = "Giá trị vận tốc (rad/s)";
 
             // Tạo một list điểm để lưu trữ dữ liệu của đồ thị
-            dataLists_real_line = new RollingPointPairList(6000);
-            dataLists_sp_line = new RollingPointPairList(6000);
+            dataLists_real_line = new RollingPointPairList(10000);
+            dataLists_sp_line = new RollingPointPairList(10000);
 
             // Vẽ đường đồ thị
             real_line = myPane.AddCurve("Real line", dataLists_real_line, Color.Blue, SymbolType.None);
             sp_line = myPane.AddCurve("Set Point", dataLists_sp_line, Color.Red, SymbolType.None);
-        }
-        /// <summary>
-        /// Timer internal clock 1ms
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void Timer_Tick(object sender, EventArgs e)
-        {
-            // Thực hiện cập nhật giao diện trên luồng UI
-            if (isDrawing)
-            {
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    textBox_real_value.Text = data_real;
-                    UpdateGraph(data_real, data_sp);
-                });
-            }
         }
 
         /// <summary>
@@ -109,11 +87,20 @@ namespace terminal_velocity
             {
                 // Received data by USART, Value received is real_velocity
                 data_real = serial_Port.ReadLine();
+                if (isDrawing)
+                {
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        UpdateGraph(data_real, data_sp);
+                        textBox_real_value.Text = data_real;
+                    });
+                }
+                
             }   
             catch (FormatException)
             {
                 // Xử lý nếu không thể chuyển đổi thành double
-                Console.WriteLine("Không thể chuyển đổi chuỗi thành giá trị double: " + data_real);
+                Console.WriteLine("Không thể nhận dữ liệu: " + data_real);
             }
         }
         /// <summary>
@@ -187,8 +174,6 @@ namespace terminal_velocity
         private void button_start_Click(object sender, EventArgs e)
         {
             data_sp = textBox_setpoint.Text;
-            // Timer enable
-            timer.Start();
             // Enable Draw save value time start
             isDrawing = true;
             startTime = DateTime.Now;
@@ -200,9 +185,6 @@ namespace terminal_velocity
                 serial_Port.WriteLine(data_sp);
             }
 
-            // Update
-            UpdateGraph(data_real, data_sp);
-
             // Enable and disable button
             button_stop.Enabled = true;
             button_start.Enabled = false;
@@ -212,8 +194,11 @@ namespace terminal_velocity
         }
         private void button_stop_Click(object sender, EventArgs e)
         {
-            // Disable timer
-            timer.Stop();
+            if (serial_Port.IsOpen) // Check serial Is Open
+            {
+                // Truyền dữ liệu đi bằng serial Port
+                serial_Port.WriteLine("0");
+            }
 
             button_stop.Enabled = false;
             button_start.Enabled = true;
@@ -235,8 +220,6 @@ namespace terminal_velocity
                 // Truyền dữ liệu đi bằng serial Port
                 serial_Port.WriteLine(data_sp);
             }
-            // Update
-            UpdateGraph(data_real, data_sp);
         }
         /// <summary>
         /// Event close form
@@ -245,8 +228,6 @@ namespace terminal_velocity
         /// <param name="e"></param>
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            
-            timer.Stop(); // Dừng timer khi đóng form để tránh lỗi
             serial_Port.Close(); // Disconnect USART
             Application.Exit(); // Thoát chương trình
         }
