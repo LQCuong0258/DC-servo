@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 # include <stdio.h>
 # include <stdlib.h>
+# include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -71,6 +72,7 @@ static void MX_GPIO_Init(void);
 void send_char(char data);
 void send_string(char *str);
 void dir(double value);
+double fabs(double x);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -111,16 +113,14 @@ void PID(double setpoint, double real){
 	Ud_f_pre = Ud_f;
 	
 	pid = Up + Ui + Ud_f;
-
+	
+	// set rotations
+	dir(pid);
 	// Saturated
-//	pid = abs((int)pid);
 	if (pid > High_lim) pwm = High_lim;
 	else if(pid < Low_lim) pwm = Low_lim;
 	else pwm = pid;
 	e_reset = pwm - pid;
-	
-	
-	dir(pid);
 	// Set value PWM
 	TIM3->CCR1 = pwm;
 }
@@ -135,13 +135,11 @@ void TIM2_IRQHandler (void){ // 1ms
 			// Caculator Velocity
 			Cnttmp = CountValue;
 			CountValue = 0;
-//			velocity = Cnttmp * 60.0 / (4 * 11 * Ts);
 			velocity = Cnttmp * 60.0 / (4 * 11 * 42 * Ts);
 //			v_filt = 0.854*v_filt + 0.0728*velocity + 0.0728*velocity_pre;
 //			velocity_pre = velocity;
 //			velocity = Cnttmp*2*pi / (4 * 11 * 42 * Ts);
 			real = velocity;
-//			real = v_filt;
 			setpoint = atof(send);
 			
 			// PID
@@ -265,7 +263,7 @@ int main(void)
 //=====Set up EXTI3--PA3 to read encoder======
 	GPIOA->CRL |= (8 << (4*3)); // input pull_up/pull_down at PA3
 	GPIOA->ODR &= ~(1 << 3);// pull down PA3 PA4 - ENC_A
-	AFIO->EXTICR[0] |= (~(15 << (4*3))); // EXTI4 - 0x0000 << (4*4)
+	AFIO->EXTICR[0] |= (~(15 << (4*3))); // EXTI3 - 0x0000 << (4*3)
 	EXTI->IMR |= (1 << 3); // enable EXTI3
 	EXTI->RTSR |= (1 << 3); //rising
 	EXTI->FTSR |= (1 << 3); //failing
@@ -286,8 +284,6 @@ int main(void)
   GPIOB->ODR &= ~(1 << 1);
 	
   /* USER CODE END 2 */
-//	HAL_Delay(5000);
-//	TIM3->CCR1 = 400; // duty cycle pwm
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */

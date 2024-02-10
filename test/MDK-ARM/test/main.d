@@ -26,4 +26,5 @@ test/main.o: ..\Core\Src\main.c ..\Core\Inc\main.h \
   ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_flash_ex.h \
   ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_pwr.h \
   D:\Keil_v5\ARM\ARMCLANG\Bin\..\include\stdio.h \
-  D:\Keil_v5\ARM\ARMCLANG\Bin\..\include\stdlib.h
+  D:\Keil_v5\ARM\ARMCLANG\Bin\..\include\stdlib.h \
+  D:\Keil_v5\ARM\ARMCLANG\Bin\..\include\math.h
